@@ -11,7 +11,9 @@ inference_test_output
 # compilation and distribution
 __pycache__
 _ext
+*.dll
 *.pyc
+*.pyd
 *.so
 detectron2.egg-info/
 build/
