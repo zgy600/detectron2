@@ -3,6 +3,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <ATen/cuda/CUDAApplyUtils.cuh>
+/*
 #ifdef WITH_CUDA
 #include "../box_iou_rotated/box_iou_rotated_utils.h"
 #endif
@@ -10,6 +11,8 @@
 #ifdef WITH_HIP
 #include "box_iou_rotated/box_iou_rotated_utils.h"
 #endif
+*/
+#include "box_iou_rotated/box_iou_rotated_utils.h"
 
 using namespace detectron2;
 
