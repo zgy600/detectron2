@@ -3,10 +3,9 @@ import copy
 import itertools
 import numpy as np
 from typing import Any, Iterator, List, Union
-import pycocotools.mask as mask_utils
+import pycocotools.mask as mask_util
 import torch
 
-from detectron2.layers import cat
 from detectron2.layers.roi_align import ROIAlign
 
 from .boxes import Boxes
@@ -28,9 +27,9 @@ def polygons_to_bitmask(polygons: List[np.ndarray], height: int, width: int) -> 
         ndarray: a bool mask of shape (height, width)
     """
     assert len(polygons) > 0, "COCOAPI does not support empty polygons"
-    rles = mask_utils.frPyObjects(polygons, height, width)
-    rle = mask_utils.merge(rles)
-    return mask_utils.decode(rle).astype(np.bool)
+    rles = mask_util.frPyObjects(polygons, height, width)
+    rle = mask_util.merge(rles)
+    return mask_util.decode(rle).astype(np.bool)
 
 
 def rasterize_polygons_within_box(
@@ -64,6 +63,7 @@ def rasterize_polygons_within_box(
         p[1::2] = p[1::2] - box[1]
 
     # 2. Rescale the polygons to the new box size
+    # max() to avoid division by small number
     ratio_h = mask_size / max(h, 0.1)
     ratio_w = mask_size / max(w, 0.1)
 
@@ -101,8 +101,8 @@ class BitMasks:
         self.image_size = tensor.shape[1:]
         self.tensor = tensor
 
-    def to(self, device: str) -> "BitMasks":
-        return BitMasks(self.tensor.to(device))
+    def to(self, *args: Any, **kwargs: Any) -> "BitMasks":
+        return BitMasks(self.tensor.to(*args, **kwargs))
 
     @property
     def device(self) -> torch.device:
@@ -218,7 +218,7 @@ class BitMasks:
         assert len(bitmasks_list) > 0
         assert all(isinstance(bitmask, BitMasks) for bitmask in bitmasks_list)
 
-        cat_bitmasks = type(bitmasks_list[0])(cat([bm.tensor for bm in bitmasks_list], dim=0))
+        cat_bitmasks = type(bitmasks_list[0])(torch.cat([bm.tensor for bm in bitmasks_list], dim=0))
         return cat_bitmasks
 
 

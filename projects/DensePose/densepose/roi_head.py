@@ -2,7 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 import numpy as np
-from typing import Dict
+from typing import Dict, List, Optional
 import fvcore.nn.weight_init as weight_init
 import torch
 import torch.nn as nn
@@ -12,6 +12,7 @@ from detectron2.layers import Conv2d, ShapeSpec, get_norm
 from detectron2.modeling import ROI_HEADS_REGISTRY, StandardROIHeads
 from detectron2.modeling.poolers import ROIPooler
 from detectron2.modeling.roi_heads import select_foreground_proposals
+from detectron2.structures import ImageList, Instances
 
 from .densepose_head import (
     build_densepose_data_filter,
@@ -70,7 +71,7 @@ class Decoder(nn.Module):
         self.predictor = Conv2d(conv_dims, num_classes, kernel_size=1, stride=1, padding=0)
         weight_init.c2_msra_fill(self.predictor)
 
-    def forward(self, features):
+    def forward(self, features: List[torch.Tensor]):
         for i, _ in enumerate(self.in_features):
             if i == 0:
                 x = self.scale_heads[i](features[i])
@@ -100,12 +101,12 @@ class DensePoseROIHeads(StandardROIHeads):
         dp_pooler_sampling_ratio   = cfg.MODEL.ROI_DENSEPOSE_HEAD.POOLER_SAMPLING_RATIO
         dp_pooler_type             = cfg.MODEL.ROI_DENSEPOSE_HEAD.POOLER_TYPE
         self.use_decoder           = cfg.MODEL.ROI_DENSEPOSE_HEAD.DECODER_ON
-        if self.use_decoder:
-            dp_pooler_scales       = (1.0 / self.feature_strides[self.in_features[0]], )
-        else:
-            dp_pooler_scales       = tuple(1.0 / self.feature_strides[k] for k in self.in_features)
         # fmt: on
-        in_channels = [self.feature_channels[f] for f in self.in_features][0]
+        if self.use_decoder:
+            dp_pooler_scales = (1.0 / input_shape[self.in_features[0]].stride,)
+        else:
+            dp_pooler_scales = tuple(1.0 / input_shape[k].stride for k in self.in_features)
+        in_channels = [input_shape[f].channels for f in self.in_features][0]
 
         if self.use_decoder:
             self.decoder = Decoder(cfg, input_shape, self.in_features)
@@ -122,7 +123,7 @@ class DensePoseROIHeads(StandardROIHeads):
         )
         self.densepose_losses = build_densepose_losses(cfg)
 
-    def _forward_densepose(self, features, instances):
+    def _forward_densepose(self, features: List[torch.Tensor], instances: List[Instances]):
         """
         Forward logic of the densepose prediction branch.
 
@@ -139,51 +140,83 @@ class DensePoseROIHeads(StandardROIHeads):
         if not self.densepose_on:
             return {} if self.training else instances
 
+        features = [features[f] for f in self.in_features]
         if self.training:
             proposals, _ = select_foreground_proposals(instances, self.num_classes)
             proposals_dp = self.densepose_data_filter(proposals)
             if len(proposals_dp) > 0:
+                # NOTE may deadlock in DDP if certain workers have empty proposals_dp
                 proposal_boxes = [x.proposal_boxes for x in proposals_dp]
 
                 if self.use_decoder:
-                    features_dec = [self.decoder(features)]
-                else:
-                    features_dec = [features[f] for f in range(len(self.in_features))]
+                    features = [self.decoder(features)]
 
-                features_dp = self.densepose_pooler(features_dec, proposal_boxes)
+                features_dp = self.densepose_pooler(features, proposal_boxes)
                 densepose_head_outputs = self.densepose_head(features_dp)
-                densepose_outputs, _ = self.densepose_predictor(densepose_head_outputs)
-                densepose_loss_dict = self.densepose_losses(proposals_dp, densepose_outputs)
+                densepose_outputs, _, confidences, _ = self.densepose_predictor(
+                    densepose_head_outputs
+                )
+                densepose_loss_dict = self.densepose_losses(
+                    proposals_dp, densepose_outputs, confidences
+                )
                 return densepose_loss_dict
         else:
             pred_boxes = [x.pred_boxes for x in instances]
 
             if self.use_decoder:
-                features_dec = [self.decoder(features)]
-            else:
-                features_dec = [features[f] for f in range(len(self.in_features))]
+                features = [self.decoder(features)]
 
-            features_dp = self.densepose_pooler(features_dec, pred_boxes)
+            features_dp = self.densepose_pooler(features, pred_boxes)
             if len(features_dp) > 0:
                 densepose_head_outputs = self.densepose_head(features_dp)
-                densepose_outputs, _ = self.densepose_predictor(densepose_head_outputs)
+                densepose_outputs, _, confidences, _ = self.densepose_predictor(
+                    densepose_head_outputs
+                )
             else:
                 # If no detection occurred instances
                 # set densepose_outputs to empty tensors
                 empty_tensor = torch.zeros(size=(0, 0, 0, 0), device=features_dp.device)
                 densepose_outputs = tuple([empty_tensor] * 4)
+                confidences = tuple([empty_tensor] * 6)
 
-            densepose_inference(densepose_outputs, instances)
+            densepose_inference(densepose_outputs, confidences, instances)
             return instances
 
-    def forward(self, images, features, proposals, targets=None):
-        features_list = [features[f] for f in self.in_features]
-
+    def forward(
+        self,
+        images: ImageList,
+        features: Dict[str, torch.Tensor],
+        proposals: List[Instances],
+        targets: Optional[List[Instances]] = None,
+    ):
         instances, losses = super().forward(images, features, proposals, targets)
         del targets, images
 
         if self.training:
-            losses.update(self._forward_densepose(features_list, instances))
-        else:
-            instances = self._forward_densepose(features_list, instances)
+            losses.update(self._forward_densepose(features, instances))
         return instances, losses
+
+    def forward_with_given_boxes(
+        self, features: Dict[str, torch.Tensor], instances: List[Instances]
+    ):
+        """
+        Use the given boxes in `instances` to produce other (non-box) per-ROI outputs.
+
+        This is useful for downstream tasks where a box is known, but need to obtain
+        other attributes (outputs of other heads).
+        Test-time augmentation also uses this.
+
+        Args:
+            features: same as in `forward()`
+            instances (list[Instances]): instances to predict other outputs. Expect the keys
+                "pred_boxes" and "pred_classes" to exist.
+
+        Returns:
+            instances (list[Instances]):
+                the same `Instances` objects, with extra
+                fields such as `pred_masks` or `pred_keypoints`.
+        """
+
+        instances = super().forward_with_given_boxes(features, instances)
+        instances = self._forward_densepose(features, instances)
+        return instances
