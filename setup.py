@@ -168,6 +168,7 @@ def get_model_zoo_configs() -> List[str]:
 PROJECTS = {
     "detectron2.projects.point_rend": "projects/PointRend/point_rend",
     "detectron2.projects.deeplab": "projects/DeepLab/deeplab",
+    "detectron2.projects.panoptic_deeplab": "projects/Panoptic-DeepLab/panoptic_deeplab",
 }
 
 setup(
@@ -182,6 +183,9 @@ setup(
     package_data={"detectron2.model_zoo": get_model_zoo_configs()},
     python_requires=">=3.6",
     install_requires=[
+        # Do not add opencv here. Just like pytorch, user should install
+        # opencv themselves, preferrably by OS's package manager, or by
+        # choosing the proper pypi package name at https://github.com/skvark/opencv-python
         "termcolor>=1.1",
         "Pillow>=7.1",  # or use pillow-simd for better performance
         "yacs>=0.1.6",
@@ -192,12 +196,16 @@ setup(
         "tqdm>4.29.0",
         "tensorboard",
         "fvcore>=0.1.1",
-        "pycocotools>=2.0.1",
+        "pycocotools>=2.0.2",  # corresponds to the fork at https://github.com/ppwwyyxx/cocoapi
         "future",  # used by caffe2
         "pydot",  # used to save caffe2 SVGs
     ],
     extras_require={
-        "all": ["shapely", "psutil"],
+        "all": [
+            "shapely",
+            "psutil",
+            "panopticapi @ https://github.com/cocodataset/panopticapi/archive/master.zip",
+        ],
         "dev": [
             "flake8==3.8.1",
             "isort==4.3.21",
