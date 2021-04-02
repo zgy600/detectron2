@@ -145,6 +145,10 @@ class InstancesList(object):
 
 
 class Caffe2Compatible(object):
+    """
+    A model can inherit this class to indicate that it can be traced and deployed with caffe2.
+    """
+
     def _get_tensor_mode(self):
         return self._tensor_mode
 
@@ -158,12 +162,9 @@ class Caffe2Compatible(object):
 
 
 class Caffe2RPN(Caffe2Compatible, rpn.RPN):
-    def forward(self, images, features, gt_instances=None):
-        assert not self.training
-
-        features = [features[f] for f in self.in_features]
-        objectness_logits_pred, anchor_deltas_pred = self.rpn_head(features)
-
+    def _generate_proposals(
+        self, images, objectness_logits_pred, anchor_deltas_pred, gt_instances=None
+    ):
         assert isinstance(images, ImageList)
         if self.tensor_mode:
             im_info = images.image_sizes
@@ -243,6 +244,17 @@ class Caffe2RPN(Caffe2Compatible, rpn.RPN):
 
         proposals = self.c2_postprocess(im_info, rpn_rois, rpn_roi_probs, self.tensor_mode)
         return proposals, {}
+
+    def forward(self, images, features, gt_instances=None):
+        assert not self.training
+        features = [features[f] for f in self.in_features]
+        objectness_logits_pred, anchor_deltas_pred = self.rpn_head(features)
+        return self._generate_proposals(
+            images,
+            objectness_logits_pred,
+            anchor_deltas_pred,
+            gt_instances,
+        )
 
     @staticmethod
     def c2_postprocess(im_info, rpn_rois, rpn_roi_probs, tensor_mode):

@@ -1,5 +1,6 @@
 # -*- coding = utf-8 -*-
 # Copyright (c) Facebook, Inc. and its affiliates.
+# pyre-ignore-all-errors
 
 from detectron2.config import CfgNode as CN
 
@@ -13,6 +14,33 @@ def add_dataset_category_config(cfg: CN):
     _C = cfg
     _C.DATASETS.CATEGORY_MAPS = CN(new_allowed=True)
     _C.DATASETS.WHITELISTED_CATEGORIES = CN(new_allowed=True)
+    # class to mesh mapping
+    _C.DATASETS.CLASS_TO_MESH_NAME_MAPPING = CN(new_allowed=True)
+
+
+def add_evaluation_config(cfg: CN):
+    _C = cfg
+    _C.DENSEPOSE_EVALUATION = CN()
+    # evaluator type, possible values:
+    #  - "iou": evaluator for models that produce iou data
+    #  - "cse": evaluator for models that produce cse data
+    _C.DENSEPOSE_EVALUATION.TYPE = "iou"
+    # storage for DensePose results, possible values:
+    #  - "none": no explicit storage, all the results are stored in the
+    #            dictionary with predictions, memory intensive;
+    #            historically the default storage type
+    #  - "ram": RAM storage, uses per-process RAM storage, which is
+    #           reduced to a single process storage on later stages,
+    #           less memory intensive
+    #  - "file": file storage, uses per-process file-based storage,
+    #            the least memory intensive, but may create bottlenecks
+    #            on file system accesses
+    _C.DENSEPOSE_EVALUATION.STORAGE = "none"
+    # minimum threshold for IOU values: the lower its values is,
+    # the more matches are produced (and the higher the AP score)
+    _C.DENSEPOSE_EVALUATION.MIN_IOU_THRESHOLD = 0.5
+    # Non-distributed inference is slower (at inference time) but can avoid RAM OOM
+    _C.DENSEPOSE_EVALUATION.DISTRIBUTED_INFERENCE = True
 
 
 def add_bootstrap_config(cfg: CN):
@@ -66,6 +94,32 @@ def load_bootstrap_config(cfg: CN):
     cfg.BOOTSTRAP_DATASETS = bootstrap_datasets_cfgnodes
 
 
+def add_densepose_head_cse_config(cfg: CN):
+    """
+    Add configuration options for Continuous Surface Embeddings (CSE)
+    """
+    _C = cfg
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE = CN()
+    # Dimensionality D of the embedding space
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBED_SIZE = 16
+    # Embedder specifications for various mesh IDs
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBEDDERS = CN(new_allowed=True)
+    # normalization coefficient for embedding distances
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBEDDING_DIST_GAUSS_SIGMA = 0.01
+    # normalization coefficient for geodesic distances
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.GEODESIC_DIST_GAUSS_SIGMA = 0.01
+    # embedding loss weight
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBED_LOSS_WEIGHT = 0.6
+    # embedding loss name, currently the following options are supported:
+    # - EmbeddingLoss: cross-entropy on vertex labels
+    # - SoftEmbeddingLoss: cross-entropy on vertex label combined with
+    #    Gaussian penalty on distance between vertices
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBED_LOSS_NAME = "EmbeddingLoss"
+    # optimizer hyperparameters
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.FEATURES_LR_FACTOR = 1.0
+    _C.MODEL.ROI_DENSEPOSE_HEAD.CSE.EMBEDDING_LR_FACTOR = 1.0
+
+
 def add_densepose_head_config(cfg: CN):
     """
     Add config for densepose head.
@@ -113,6 +167,8 @@ def add_densepose_head_config(cfg: CN):
     #   "DensePoseChartPredictor": predicts segmentation and UV coordinates for predefined charts
     #   "DensePoseChartWithConfidencePredictor": predicts segmentation, UV coordinates
     #       and associated confidences for predefined charts (default)
+    #   "DensePoseEmbeddingWithConfidencePredictor": predicts segmentation, embeddings
+    #       and associated confidences for CSE
     _C.MODEL.ROI_DENSEPOSE_HEAD.PREDICTOR_NAME = "DensePoseChartWithConfidencePredictor"
     # Loss class name, must be registered in DENSEPOSE_LOSS_REGISTRY
     # Some registered losses:
@@ -139,6 +195,8 @@ def add_densepose_head_config(cfg: CN):
     # List of angles for rotation in data augmentation during training
     _C.INPUT.ROTATION_ANGLES = [0]
     _C.TEST.AUG.ROTATION_ANGLES = ()  # Rotation TTA
+
+    add_densepose_head_cse_config(cfg)
 
 
 def add_hrnet_config(cfg: CN):
@@ -181,3 +239,4 @@ def add_densepose_config(cfg: CN):
     add_hrnet_config(cfg)
     add_bootstrap_config(cfg)
     add_dataset_category_config(cfg)
+    add_evaluation_config(cfg)
