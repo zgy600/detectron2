@@ -77,6 +77,8 @@ def collect_env_info():
         )
     except ImportError:
         data.append(("detectron2", "failed to import"))
+    except AttributeError:
+        data.append(("detectron2", "imported a wrong installation"))
 
     try:
         import detectron2._C as _C
@@ -102,6 +104,15 @@ def collect_env_info():
                 except subprocess.SubprocessError:
                     nvcc = "Not found"
                 data.append(("CUDA compiler", nvcc))
+        if has_cuda and sys.platform != "win32":
+            try:
+                so_file = importlib.util.find_spec("detectron2._C").origin
+            except (ImportError, AttributeError):
+                pass
+            else:
+                data.append(
+                    ("detectron2 arch flags", detect_compute_compatibility(CUDA_HOME, so_file))
+                )
     else:
         # print compilers that are used to build extension
         data.append(("Compiler", _C.get_compiler_version()))
@@ -115,7 +126,11 @@ def collect_env_info():
     data.append(("PyTorch", torch_version + " @" + os.path.dirname(torch.__file__)))
     data.append(("PyTorch debug build", torch.version.debug))
 
-    data.append(("GPU available", has_gpu))
+    if not has_gpu:
+        has_gpu_text = "No: torch.cuda.is_available() == False"
+    else:
+        has_gpu_text = "Yes"
+    data.append(("GPU available", has_gpu_text))
     if has_gpu:
         devices = defaultdict(list)
         for k in range(torch.cuda.device_count()):
@@ -149,7 +164,7 @@ def collect_env_info():
                 torchvision_C = importlib.util.find_spec("torchvision._C").origin
                 msg = detect_compute_compatibility(CUDA_HOME, torchvision_C)
                 data.append(("torchvision arch flags", msg))
-            except ImportError:
+            except (ImportError, AttributeError):
                 data.append(("torchvision._C", "Not found"))
     except AttributeError:
         data.append(("torchvision", "unknown"))
@@ -158,7 +173,7 @@ def collect_env_info():
         import fvcore
 
         data.append(("fvcore", fvcore.__version__))
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
     try:
@@ -172,7 +187,7 @@ def collect_env_info():
         import cv2
 
         data.append(("cv2", cv2.__version__))
-    except ImportError:
+    except (ImportError, AttributeError):
         data.append(("cv2", "Not found"))
     env_str = tabulate(data) + "\n"
     env_str += collect_torch_env()

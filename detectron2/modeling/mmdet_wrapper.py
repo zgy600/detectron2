@@ -152,13 +152,13 @@ class MMDetDetector(nn.Module):
         self.detector = detector
         self.size_divisibility = size_divisibility
 
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
-        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
+        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
         assert (
             self.pixel_mean.shape == self.pixel_std.shape
         ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
 
-    def forward(self, batched_inputs: Tuple[Dict[str, torch.Tensor]]):
+    def forward(self, batched_inputs: List[Dict[str, torch.Tensor]]):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, size_divisibility=self.size_divisibility).tensor
@@ -173,7 +173,9 @@ class MMDetDetector(nn.Module):
             c, h, w = input["image"].shape
             meta["img_shape"] = meta["ori_shape"] = (h, w, c)
             if rescale:
-                scale_factor = np.sqrt(h * w / (input["height"] * input["width"]))
+                scale_factor = np.array(
+                    [w / input["width"], h / input["height"]] * 2, dtype="float32"
+                )
                 ori_shape = (input["height"], input["width"])
                 output_shapes.append(ori_shape)
                 meta["ori_shape"] = ori_shape + (c,)
@@ -199,15 +201,20 @@ class MMDetDetector(nn.Module):
                         return mm_PolygonMasks(m.polygons, shape[0], shape[1])
 
                 gt_masks = [convert_mask(x.gt_masks, x.image_size) for x in gt_instances]
+                losses_and_metrics = self.detector.forward_train(
+                    images,
+                    metas,
+                    [x.gt_boxes.tensor for x in gt_instances],
+                    [x.gt_classes for x in gt_instances],
+                    gt_masks=gt_masks,
+                )
             else:
-                gt_masks = None
-            losses_and_metrics = self.detector.forward_train(
-                images,
-                metas,
-                [x.gt_boxes.tensor for x in gt_instances],
-                [x.gt_classes for x in gt_instances],
-                gt_masks=gt_masks,
-            )
+                losses_and_metrics = self.detector.forward_train(
+                    images,
+                    metas,
+                    [x.gt_boxes.tensor for x in gt_instances],
+                    [x.gt_classes for x in gt_instances],
+                )
             return _parse_losses(losses_and_metrics)
         else:
             results = self.detector.simple_test(images, metas, rescale=rescale)

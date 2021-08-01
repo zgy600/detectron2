@@ -142,8 +142,8 @@ class RetinaNet(nn.Module):
         self.vis_period = vis_period
         self.input_format = input_format
 
-        self.register_buffer("pixel_mean", torch.Tensor(pixel_mean).view(-1, 1, 1), False)
-        self.register_buffer("pixel_std", torch.Tensor(pixel_std).view(-1, 1, 1), False)
+        self.register_buffer("pixel_mean", torch.tensor(pixel_mean).view(-1, 1, 1), False)
+        self.register_buffer("pixel_std", torch.tensor(pixel_std).view(-1, 1, 1), False)
 
         """
         In Detectron1, loss is normalized by number of foreground samples in the batch.
@@ -229,7 +229,7 @@ class RetinaNet(nn.Module):
         vis_name = f"Top: GT bounding boxes; Bottom: {max_boxes} Highest Scoring Results"
         storage.put_image(vis_name, vis_img)
 
-    def forward(self, batched_inputs: Tuple[Dict[str, Tensor]]):
+    def forward(self, batched_inputs: List[Dict[str, Tensor]]):
         """
         Args:
             batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
@@ -485,7 +485,7 @@ class RetinaNet(nn.Module):
         result.pred_classes = class_idxs_all[keep]
         return result
 
-    def preprocess_image(self, batched_inputs: Tuple[Dict[str, Tensor]]):
+    def preprocess_image(self, batched_inputs: List[Dict[str, Tensor]]):
         """
         Normalize, pad and batch the input images.
         """
