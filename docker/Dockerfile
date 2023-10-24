@@ -1,8 +1,17 @@
 FROM nvidia/cuda:11.1.1-cudnn8-devel
 
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get update && apt-get install -y \
-	python3-opencv ca-certificates python3-dev git wget sudo ninja-build
+# RUN apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/7fa2af80.pub
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu1804/x86_64/7fa2af80.pub
+RUN apt-get update
+RUN apt-get install -y python3-opencv 
+RUN apt-get install -y ca-certificates 
+RUN apt-get install -y python3-dev 
+RUN apt-get install -y git
+RUN apt-get install -y wget
+RUN apt-get install -y sudo
+RUN apt-get install -y ninja-build
 RUN ln -sv /usr/bin/python3 /usr/bin/python
 
 # create a non-root user
@@ -41,6 +50,6 @@ WORKDIR /home/appuser/detectron2_repo
 # run detectron2 under user "appuser":
 # wget http://images.cocodataset.org/val2017/000000439715.jpg -O input.jpg
 # python3 demo/demo.py  \
-	#--config-file configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml \
-	#--input input.jpg --output outputs/ \
-	#--opts MODEL.WEIGHTS detectron2://COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl
+#--config-file configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml \
+#--input input.jpg --output outputs/ \
+#--opts MODEL.WEIGHTS detectron2://COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl
